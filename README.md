@@ -1,50 +1,49 @@
 # The World in One Day — 19 November 2026
 
-[![make.fun · news-image-20261119](https://make.fun/badge/news-image-20261119.svg)](https://make.fun/bounty/news-image-20261119?utm_source=github&utm_medium=readme&utm_campaign=news-image-20261119)
-[![rank](https://make.fun/badge/news-image-20261119/Revaaa28/makefun-news-image-20261119/rank.svg)](https://make.fun/bounty/news-image-20261119/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=news-image-20261119)
-[![reward](https://make.fun/badge/news-image-20261119/Revaaa28/makefun-news-image-20261119/reward.svg)](https://make.fun/bounty/news-image-20261119?utm_source=github&utm_medium=readme&utm_campaign=news-image-20261119)
+A newspaper-style poster summing up Thursday 19 November 2026 in one
+image, built for the make.fun competition
+`news-image-20261119` ("Sum up 19 November's world news in one image").
 
-**Concept.** One image that sums up the whole of Thursday 19 November 2026:
-a newspaper poster, "THE WORLD IN ONE DAY", with the date in red under the
-masthead and 13 stories in a 1 + 3 + 9 structure. The lead story runs as a
-hero splash — the first-ever Trump–Xi–Putin trilateral in Shenzhen, on the
-APEC sidelines. Three more stories run as pictured panels — GTA VI launching
-worldwide after 13 years, the world court delivering its Rohingya-genocide
-verdict, and Cyclone Akvan bearing down on India's east coast. Nine more run
-as numbered briefs around a dotted world map — Voyager 1 a light-day out,
-Canada resetting its China ties, Mélenchon tipped as a possible French
-president, India–Japan defence talks, tougher US green-card rules, a drugs
-haul in eastern Libya, Somalia's accusation against the UAE, COP31 in
-Antalya, and Duckett's 133 in the ODI.
+## What it shows
 
-**Design.** Every story is verified against reporting first published on
-19 November 2026 (Reuters, AP, People, NASA, the ICJ, India's IMD); where an
-event was scheduled for later in the day, the wording says so ("meets today",
-"delivers its verdict today") and states no outcome in advance. Every letter
-is rendered by code and every illustration is drawn with PIL shapes in
-`tools/render.py` — no photos, no copied artwork — so the text is perfectly
-legible with zero garbling. Type is kept large on purpose: the masthead, the
-hero headline and the panel headlines all still read at 300 px across.
-`main.py` (Python 3.13, standard library only) installs the committed
-`entry.png` into the output directory; run twice it writes identical bytes.
+Thirteen stories from reporting first published on 19 November 2026:
 
-**Story selection.** The day's most consequential stories, across regions
-and fields, not one country's or one beat's:
+1. **Shenzhen (hero)** — the first-ever Trump–Xi–Putin trilateral, on the
+   APEC sidelines, with Ukraine, Iran and nuclear arms on the agenda.
+2. **Vice City** — GTA VI launches worldwide after 13 years of waiting.
+3. **The Hague** — the International Court of Justice delivers its verdict
+   in The Gambia's genocide case against Myanmar over the Rohingya.
+4. **Bay of Bengal** — Cyclone Akvan nears India's coast; red alerts and
+   school closures in Odisha and Andhra Pradesh, landfall due Friday.
+5. **Voyager 1** — NASA confirms the 1977 probe is one light-day out, the
+   first human-made object to reach the mark.
+6. **Ottawa** — Carney strikes a tariff deal with Xi.
+7. **Paris** — France's justice minister says Mélenchon "could win".
+8. **Tokyo** — India and Japan review defence ties at a 2+2 meeting.
+9. **Washington** — the US proposes tougher employment-based green-card rules.
+10. **East Libya** — cocaine and millions of pills seized in Derna.
+11. **Mogadishu** — Somalia accuses the UAE of secret military bases.
+12. **Antalya** — COP31 climate talks continue as a draft deal draws fire.
+13. **Australia** — Ben Duckett's 133 seals England's 2–1 ODI series win.
 
-- *Diplomacy:* Trump, Xi and Putin meet in Shenzhen; Canada resets China ties; India and Japan review defence ties.
-- *Law:* the ICJ delivers its verdict in The Gambia's genocide case against Myanmar.
-- *Culture / technology:* GTA VI launches worldwide; NASA confirms Voyager 1 one light-day from Earth; the US proposes tougher green-card rules.
-- *Weather / disaster:* Cyclone Akvan nears India's east coast; COP31 talks continue in Antalya.
-- *Middle East / Africa:* Somalia accuses the UAE of secret military bases; a drugs haul is seized in eastern Libya.
-- *Europe / politics:* France's justice minister says Mélenchon could win the presidency.
-- *Sport:* Ben Duckett hits 133 in the third ODI against Australia.
+A dotted world map carries numbered pins for all 13 stories.
 
-**How it is made.** `tools/render.py` draws the poster with PIL
-(`entry.png`, 1024×1024, ~135 KB). `main.py` copies it to
-`$MAKEFUN_OUTPUT_DIR/entry.png` (default `/output/entry.png`).
-Verify: run `main.py` twice into two directories and compare — the
-bytes are identical.
+## How it is made
 
-Entry for the make.fun bounty
-[news-image-20261119](https://make.fun/bounty/news-image-20261119)
-("Sum up 19 November's world news in one image", $250 in prizes).
+`main.py` runs the PIL-only renderer in `tools/render.py`, which draws
+everything from code — skyline, flags, sunset, courthouse, cyclone
+spiral, dotted map — with no photographs and no network. The output is
+deterministic: repeated runs write byte-identical PNGs.
+
+## Run it
+
+```sh
+python3 main.py            # writes /output/entry.png (or $MAKEFUN_OUTPUT_DIR)
+python3 tools/render.py    # writes entry.png in the current directory
+```
+
+Output: a 1024×1024 PNG, under 1 MiB.
+
+## License
+
+MIT — see `LICENSE`.

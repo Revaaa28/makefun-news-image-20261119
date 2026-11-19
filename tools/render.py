@@ -1,472 +1,428 @@
-#!/usr/bin/env python3
-"""Render entry.png: the world news of Thursday 19 November 2026 in one image.
+"""Draw the 19 November 2026 world-news poster (1024x1024, PIL only).
 
-Newspaper-poster style, drawn entirely with PIL shapes and DejaVu type so
-every word stays crisp. Layout: masthead naming the day, a hero story (the
-first-ever Trump-Xi-Putin trilateral in Shenzhen), three pictured panels
-(GTA VI launch, the ICJ Rohingya judgment, Cyclone Akvan), a dotted world
-map with numbered pins for all 13 stories, and nine one-line briefs.
+A newspaper front page: masthead naming the day, a hero story (the
+first-ever Trump-Xi-Putin trilateral in Shenzhen), three picture panels
+(GTA VI launch, ICJ Rohingya verdict, Cyclone Akvan), a dotted world map
+with numbered pins for all 13 stories, and nine short briefs.
 
-Every story was verified against reporting first published on 19 November
-2026 (Reuters, AP, People, NASA, the ICJ, India's IMD); where an event was
-scheduled for later in the day, the wording says so ("meets today",
-"delivers its verdict today") and states no outcome in advance.
-
-Run:  python3 tools/render.py   ->  writes entry.png at the repo root
+Deterministic: no randomness, no clock, no network. Running this module
+twice produces byte-identical PNGs.
 """
 
-import math
-from pathlib import Path
+import os
 
 from PIL import Image, ImageDraw, ImageFont
 
-W = H = 1024
-PAPER = (247, 241, 227)      # cream newsprint
-NAVY = (20, 33, 61)          # ink navy
-RED = (193, 39, 45)          # accent red
-PANEL_BG = (255, 253, 246)   # panel paper
-MAP_BG = (233, 238, 243)     # pale sea grey-blue
+W, H = 1024, 1024
+
+NAVY = (20, 33, 61)
+NAVY_DARK = (13, 22, 43)
+RED = (201, 42, 42)
 CREAM = (247, 241, 227)
-WHITE = (255, 255, 255)
-SKY = (38, 64, 110)          # hero sky
-GOLD = (212, 175, 55)
+PAPER = (255, 253, 247)
+INK = (24, 28, 38)
+GREY = (90, 96, 110)
+LIGHT_BLUE = (214, 228, 240)
+GOLD = (232, 180, 60)
 
 FONT_DIR = "/usr/share/fonts/truetype/dejavu"
-SANS = f"{FONT_DIR}/DejaVuSans.ttf"
-SANS_B = f"{FONT_DIR}/DejaVuSans-Bold.ttf"
-SERIF = f"{FONT_DIR}/DejaVuSerif.ttf"
-SERIF_B = f"{FONT_DIR}/DejaVuSerif-Bold.ttf"
 
 
-def font(path, size):
-    return ImageFont.truetype(path, size)
+def font(name, size):
+    return ImageFont.truetype(os.path.join(FONT_DIR, name), size)
 
 
-def fit_font(d, text, path, max_w, start, minimum=10):
-    """Largest size <= start whose text still fits max_w."""
-    size = start
-    while size > minimum:
-        f = font(path, size)
-        if d.textlength(text, font=f) <= max_w:
-            return f
-        size -= 2
-    return font(path, minimum)
+SERIF = "DejaVuSerif-Bold.ttf"
+SERIF_REG = "DejaVuSerif.ttf"
+SANS = "DejaVuSans.ttf"
+SANS_BOLD = "DejaVuSans-Bold.ttf"
 
 
-def wrap_text(d, text, f, max_w):
-    """Greedy word wrap measured with textlength; nothing overflows."""
+def wrap(draw, text, fnt, max_width):
+    """Greedy word wrap; returns a list of lines that fit max_width."""
     lines, cur = [], ""
     for word in text.split():
         trial = (cur + " " + word).strip()
-        if d.textlength(trial, font=f) <= max_w or not cur:
+        if draw.textlength(trial, font=fnt) <= max_width:
             cur = trial
         else:
-            lines.append(cur)
+            if cur:
+                lines.append(cur)
             cur = word
     if cur:
         lines.append(cur)
     return lines
 
 
-def headline_lines(d, text, max_w, max_lines=3, start=33, minimum=18,
-                   max_h=None):
-    """Shrink the headline font until the wrap fits max_lines lines
-    (and, when max_h is given, fits that pixel height too)."""
-    size = start
-    while size >= minimum:
-        f = font(SANS_B, size)
-        lines = wrap_text(d, text, f, max_w)
-        lh = int(size * 1.18)
-        if len(lines) <= max_lines and (max_h is None
-                                        or len(lines) * lh <= max_h):
-            return f, lines
-        size -= 1
-    f = font(SANS_B, minimum)
-    return f, wrap_text(d, text, f, max_w)
+def text_block(draw, x, y, text, fnt, fill, max_width, leading=None):
+    """Draw wrapped text; returns the y just below the last line."""
+    if leading is None:
+        leading = int(fnt.size * 1.28)
+    for line in wrap(draw, text, fnt, max_width):
+        draw.text((x, y), line, font=fnt, fill=fill)
+        y += leading
+    return y
 
 
-# ---------------------------------------------------------------- masthead
-
-def draw_masthead(d):
-    d.rectangle([0, 0, W, 100], fill=NAVY)
-    d.rectangle([0, 100, W, 104], fill=RED)
-    title = "THE WORLD IN ONE DAY"
-    f = fit_font(d, title, SERIF_B, 940, 56)
-    d.text((512, 40), title, font=f, fill=WHITE, anchor="mm")
-    d.text((28, 78), "ONE DAY  ·  13 STORIES  ·  EVERY REGION",
-           font=font(SANS_B, 15), fill=CREAM, anchor="lm")
-    date = "THURSDAY, 19 NOVEMBER 2026"
-    f = fit_font(d, date, SANS_B, 420, 24)
-    d.text((996, 78), date, font=f, fill=(255, 120, 110), anchor="rm")
+def panel(draw, x0, y0, x1, y1, fill=PAPER, outline=NAVY, width=2):
+    draw.rectangle([x0, y0, x1, y1], fill=fill, outline=outline, width=width)
 
 
-# ------------------------------------------------------------------ icons
-
-def star_points(cx, cy, r_out, r_in, n=5, rot=-math.pi / 2):
-    pts = []
-    for i in range(2 * n):
-        r = r_out if i % 2 == 0 else r_in
-        a = rot + i * math.pi / n
-        pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
-    return pts
-
-
-def draw_flag_us(d, x, y, w, h):
-    """Stylised Stars and Stripes on a pole."""
-    d.rectangle([x, y, x + w, y + h], fill=WHITE, outline=NAVY, width=2)
-    for i in range(7):
-        if i % 2 == 0:
-            d.rectangle([x, y + i * h / 7, x + w, y + (i + 1) * h / 7],
-                        fill=RED)
-    d.rectangle([x, y, x + w * 0.42, y + h * 4 / 7], fill=NAVY)
-    for r in range(3):
-        for c in range(4):
-            sx = x + 6 + c * (w * 0.42 - 10) / 3
-            sy = y + 5 + r * (h * 4 / 7 - 8) / 2
-            d.polygon(star_points(sx, sy, 3.2, 1.3), fill=WHITE)
+def header_strip(draw, x0, y0, x1, y1, left, right=None):
+    draw.rectangle([x0, y0, x1, y1], fill=NAVY)
+    f_left = font(SANS_BOLD, 15)
+    draw.text((x0 + 10, y0 + 5), left, font=f_left, fill=(255, 255, 255))
+    if right:
+        f_right = font(SANS, 13)
+        tw = draw.textlength(right, font=f_right)
+        draw.text((x1 - 10 - tw, y0 + 6), right, font=f_right,
+                  fill=(200, 210, 225))
 
 
-def draw_flag_cn(d, x, y, w, h):
-    """Stylised Chinese flag: red field, one large gold star."""
-    d.rectangle([x, y, x + w, y + h], fill=(222, 41, 16), outline=NAVY,
-                width=2)
-    d.polygon(star_points(x + w * 0.28, y + h * 0.42, 11, 4.5), fill=GOLD)
-    for sx, sy in [(0.62, 0.2), (0.74, 0.32), (0.74, 0.52), (0.62, 0.64)]:
-        d.polygon(star_points(x + w * sx, y + h * sy, 4.5, 1.8), fill=GOLD)
-
-
-def draw_flag_ru(d, x, y, w, h):
-    """Stylised Russian tricolour."""
-    d.rectangle([x, y, x + w, y + h], fill=WHITE, outline=NAVY, width=2)
-    d.rectangle([x, y, x + w, y + h / 3], fill=WHITE)
-    d.rectangle([x, y + h / 3, x + w, y + 2 * h / 3], fill=(0, 57, 166))
-    d.rectangle([x, y + 2 * h / 3, x + w, y + h], fill=(213, 0, 50))
-
-
-def draw_hero_art(d, x, y, w, h):
-    """Shenzhen at dusk: tower skyline and three flags."""
-    d.rectangle([x, y, x + w, y + h], fill=SKY)
-    # stars in the dusk sky
-    for sx, sy in ((18, 16), (120, 10), (300, 12), (52, 34), (210, 26)):
-        d.ellipse([x + sx - 2, y + sy - 2, x + sx + 2, y + sy + 2],
-                  fill=(255, 230, 150))
-    # skyline silhouettes
-    towers = [(0, 78, 26, 118), (30, 58, 26, 138), (60, 88, 22, 108),
-              (86, 48, 24, 148), (114, 70, 26, 126), (144, 90, 22, 106),
-              (170, 60, 26, 136), (200, 84, 24, 112), (226, 66, 26, 130),
-              (256, 92, 24, 104), (284, 74, 26, 122)]
-    for tx, ty, tw, th in towers:
-        d.rectangle([x + tx, y + h - th, x + tx + tw, y + h], fill=(13, 24, 48))
-        for wy in range(y + h - th + 8, y + h - 8, 12):
-            d.rectangle([x + tx + 6, wy, x + tx + 10, wy + 5],
-                        fill=(255, 214, 120))
-    # ground band
-    d.rectangle([x, y + h - 26, x + w, y + h], fill=(13, 24, 48))
-    d.line([x, y + h - 26, x + w, y + h - 26], fill=GOLD, width=3)
-    # three flags on poles above the skyline
-    for i, fn in enumerate((draw_flag_us, draw_flag_cn, draw_flag_ru)):
-        fx = x + 30 + i * 100
-        d.line([fx + 16, y + 10, fx + 16, y + 82], fill=WHITE, width=3)
-        fn(d, fx + 16, y + 12, 72, 46)
-
-
-def draw_gta_art(d, x, y, w, h):
-    """Vice City sunset: neon bands, palm silhouettes, glowing sign."""
-    bands = [(255, 94, 98), (255, 149, 81), (255, 183, 77),
-             (255, 214, 120), (138, 43, 226)]
-    bh = h / len(bands)
-    for i, col in enumerate(bands):
-        d.rectangle([x, y + i * bh, x + w, y + (i + 1) * bh], fill=col)
-    sr = h * 0.26
-    d.ellipse([x + w // 2 - sr, y + h * 0.10 - sr, x + w // 2 + sr,
-               y + h * 0.10 + sr], fill=(255, 244, 190))
-    # sea strip
-    sea = y + h * 0.82
-    d.rectangle([x, sea, x + w, y + h], fill=(24, 44, 84))
-    d.line([x, sea, x + w, sea], fill=(255, 120, 180), width=2)
-    # palms
-    for px, lean in ((x + 22, 1), (x + w - 26, -1)):
-        top_y = y + h * 0.30
-        d.line([px, sea, px + lean * 10, top_y], fill=(20, 20, 40), width=4)
-        for a in range(-50, 61, 25):
-            ang = math.radians(a - 90 + (20 if lean > 0 else -20))
-            ex = px + lean * 10 + 26 * math.cos(ang)
-            ey = top_y + 26 * math.sin(ang) * 0.55
-            d.line([px + lean * 10, top_y, ex, ey], fill=(20, 20, 40),
-                   width=3)
-    f = fit_font(d, "VICE CITY", SANS_B, w - 16, 22)
-    d.text((x + w // 2, y + h * 0.68), "VICE CITY", font=f,
-           fill=(255, 255, 255), anchor="mm",
-           stroke_width=2, stroke_fill=(255, 0, 128))
-
-
-def draw_icj_art(d, x, y, w, h):
-    """The Peace Palace: columns and pediment."""
-    d.rectangle([x, y, x + w, y + h], fill=(214, 222, 232))
-    cx = x + w // 2
-    # pediment + columns
-    d.polygon([(x + 8, y + h * 0.52), (cx, y + h * 0.10),
-               (x + w - 8, y + h * 0.52)], fill=NAVY)
-    d.ellipse([cx - 11, y + h * 0.20, cx + 11, y + h * 0.20 + 22],
-              fill=GOLD, outline=WHITE, width=2)
-    for i in range(4):
-        ccx = x + 26 + i * (w - 52) // 3
-        d.rectangle([ccx - 8, y + h * 0.56, ccx + 8, y + h - 12], fill=WHITE,
-                    outline=NAVY, width=2)
-    d.rectangle([x + 8, y + h * 0.52, x + w - 8, y + h * 0.60], fill=NAVY)
-    d.rectangle([x + 8, y + h - 12, x + w - 8, y + h - 6], fill=NAVY)
-
-
-def draw_akvan_art(d, x, y, w, h):
-    """Cyclone spiral over the Bay of Bengal, rain over the coast."""
-    d.rectangle([x, y, x + w, y + h], fill=(28, 52, 92))
-    cx, cy = x + w // 2, y + h // 2 - 4
-    r_max = int(h * 0.44)
-    for r in range(r_max, 6, -7):
-        a0 = (r_max - r) * 0.09
-        d.arc([cx - r, cy - r, cx + r, cy + r], math.degrees(a0),
-              math.degrees(a0 + 4.4), fill=WHITE, width=5)
-    d.ellipse([cx - 7, cy - 7, cx + 7, cy + 7], fill=RED)
-    # rain
-    for i in range(12):
-        rx = x + 10 + (i * 31) % (w - 20)
-        ry = y + 6 + (i * 19) % (h - 30)
-        d.line([rx, ry, rx - 4, ry + 9], fill=(140, 190, 255), width=2)
-    # coast + waves at the bottom
-    d.rectangle([x, y + h - 12, x + w, y + h], fill=(16, 90, 70))
-    for i in range(4):
-        wx = x + 8 + i * 70
-        d.arc([wx, y + h - 11, wx + 40, y + h - 1], 200, 340,
-              fill=WHITE, width=2)
-
-# -------------------------------------------------------------------- map
-
-# Equirectangular landmask, 104 columns (lon -180..180) by 24 rows
-# (lat +80..-58). '#' is land, '.' is sea. Pins below are (column, row)
-# cells in the same grid.
-
-LANDMASK = [
-    "....................########...........#####...........##..###....#############.......#########.....###.",
-    "...########....####################...########.......##################################################.",
-    "...#########...##########.....########..#####..#....##################################################..",
-    "....########....###########...########...##.......###################################################...",
-    "...............############..########.............###############################################.###...",
-    "................#####################.............############################################...##.....",
-    "................###################..............##########...####################################......",
-    "...............##################................###..#######.##############################...##.......",
-    "...............################.................###########################################.............",
-    "................###########.##.................######################...#################...............",
-    "..................##########.###...............#################.........#####..######.##...............",
-    "........................###########............#######################....###....#####.##...............",
-    "..........................###########...........####################........#.....###########...........",
-    "...........................##############........################..................########...#######...",
-    "...........................###############............##########.....................#########.######...",
-    "............................###############............#########.........................###.#####......",
-    ".............................############..............#########.......................###########......",
-    "..............................#########................########.###....................###########......",
-    "..............................########..................######..##......................#########.......",
-    "...............................######....................#####...........................#######......##",
-    "...............................#####........................................................#####....###",
-    "...............................####..................................................................##.",
-    "...............................###......................................................................",
-    "...............................##.......................................................................",
-]
-
-# (label, column, row) for all 13 stories.
-MAP_PINS = [
-    ("1", 85, 10),    # Shenzhen
-    ("2", 27, 10),    # Vice City / Miami
-    ("3", 54, 4),     # The Hague
-    ("4", 77, 11),    # Andhra coast
-    ("5", 18, 8),     # Pasadena (NASA JPL)
-    ("6", 29, 5),     # Ottawa
-    ("7", 52, 6),     # Paris
-    ("8", 92, 8),     # Tokyo
-    ("9", 31, 8),     # Washington DC
-    ("10", 58, 8),    # East Libya
-    ("11", 65, 14),   # Mogadishu
-    ("12", 61, 7),    # Antalya
-    ("13", 96, 20),   # Australia
-]
-
-MAP_X0, MAP_Y0 = 32.7, 531.2   # centre of the (0, 0) cell
-MAP_PX, MAP_PY = 9.31, 6.33    # cell pitch in pixels
-
-
-def map_cell(col, row):
-    return (MAP_X0 + col * MAP_PX, MAP_Y0 + row * MAP_PY)
-
-
-def draw_map(d):
-    d.rectangle([28, 500, 996, 684], fill=MAP_BG, outline=NAVY, width=3)
-    d.rectangle([28, 500, 996, 528], fill=NAVY)
-    d.text((44, 514), "THE DAY ON THE MAP", font=font(SANS_B, 19),
-           fill=WHITE, anchor="lm")
-    note = "numbered pins: all 13 stories"
-    f = fit_font(d, note, SANS, 400, 15, minimum=11)
-    d.text((980, 514), note, font=f, fill=CREAM, anchor="rm")
-    for row, line in enumerate(LANDMASK):
-        for col, ch in enumerate(line):
-            if ch == "#":
-                cx, cy = map_cell(col, row)
-                d.ellipse([cx - 2.7, cy - 2.7, cx + 2.7, cy + 2.7], fill=NAVY)
-    for label, col, row in MAP_PINS:
-        cx, cy = map_cell(col, row)
-        if len(label) > 1:
-            r, fs = 11, 10
+# ---------------------------------------------------------------- skyline
+def draw_skyline(draw, x0, y0, x1, y1):
+    """Night skyline of Shenzhen with three flags above the towers."""
+    draw.rectangle([x0, y0, x1, y1], fill=(26, 42, 74))
+    # stars
+    for i in range(26):
+        sx = x0 + 12 + (i * 37) % (x1 - x0 - 20)
+        sy = y0 + 8 + (i * 23) % 34
+        r = 1 if i % 3 else 2
+        draw.ellipse([sx - r, sy - r, sx + r, sy + r], fill=(255, 240, 180))
+    base = y1
+    # towers, heights from a fixed pattern (no randomness)
+    heights = [62, 96, 78, 118, 88, 130, 104, 74, 122, 92, 108, 66, 98, 84]
+    bw = (x1 - x0) // len(heights)
+    for i, hgt in enumerate(heights):
+        bx0 = x0 + i * bw + 2
+        bx1 = x0 + (i + 1) * bw - 2
+        top = base - hgt
+        draw.rectangle([bx0, top, bx1, base], fill=(10, 16, 32))
+        if i % 4 == 1:  # antenna
+            draw.line([ (bx0 + bx1) // 2, top - 14, (bx0 + bx1) // 2, top],
+                      fill=(10, 16, 32), width=2)
+            draw.ellipse([(bx0 + bx1) // 2 - 2, top - 17,
+                          (bx0 + bx1) // 2 + 2, top - 13], fill=RED)
+        # lit windows in a fixed checker pattern
+        for row in range(3, hgt - 6, 12):
+            for col in range(4, bw - 8, 10):
+                if (row // 12 + col // 10 + i) % 3 == 0:
+                    wx = bx0 + col
+                    wy = top + row
+                    draw.rectangle([wx, wy, wx + 4, wy + 5],
+                                   fill=(255, 214, 110))
+    # ground glow
+    draw.rectangle([x0, base - 4, x1, base], fill=GOLD)
+    # three flags on poles, left to right: US, China, Russia
+    flag_y = y0 + 14
+    flag_w, flag_h = 52, 32
+    xs = [x0 + 16, x0 + 118, x0 + 220]
+    for fx, kind in zip(xs, ("us", "cn", "ru")):
+        draw.line([fx + flag_w // 2, flag_y - 6, fx + flag_w // 2,
+                   flag_y + flag_h + 30], fill=(200, 200, 200), width=2)
+        if kind == "us":
+            for s in range(7):
+                draw.rectangle([fx, flag_y + s * 5, fx + flag_w,
+                                flag_y + s * 5 + 5],
+                               fill=RED if s % 2 == 0 else (255, 255, 255))
+            draw.rectangle([fx, flag_y, fx + 22, flag_y + 16], fill=(30, 50, 110))
+            for r in range(3):
+                for c in range(4):
+                    draw.ellipse([fx + 3 + c * 5, flag_y + 3 + r * 5,
+                                  fx + 5 + c * 5, flag_y + 5 + r * 5],
+                                 fill=(255, 255, 255))
+        elif kind == "cn":
+            draw.rectangle([fx, flag_y, fx + flag_w, flag_y + flag_h],
+                           fill=(222, 41, 16))
+            draw.ellipse([fx + 8, flag_y + 7, fx + 20, flag_y + 19],
+                         fill=(255, 222, 0))
+            for sx, sy in [(28, 8), (36, 12), (36, 20), (28, 24)]:
+                draw.ellipse([fx + sx, flag_y + sy, fx + sx + 4, flag_y + sy + 4],
+                             fill=(255, 222, 0))
         else:
-            r, fs = 10, 13
-        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=RED, outline=WHITE,
-                  width=2)
-        d.text((cx, cy), label, font=font(SANS_B, fs), fill=WHITE, anchor="mm")
+            for s, col in enumerate([(255, 255, 255), (0, 90, 180), (210, 30, 30)]):
+                draw.rectangle([fx, flag_y + s * 11, fx + flag_w,
+                                flag_y + s * 11 + 11], fill=col)
+        draw.rectangle([fx, flag_y, fx + flag_w, flag_y + flag_h],
+                       outline=(0, 0, 0), width=1)
 
 
-# ------------------------------------------------------------------- hero
+def draw_vice_city(draw, x0, y0, x1, y1):
+    """Sunset over Vice City: orange sky, sun, palms, neon sign."""
+    for i in range(y1 - y0):
+        t = i / max(1, (y1 - y0 - 1))
+        r = int(255 - 60 * t)
+        g = int(140 - 40 * t)
+        b = int(90 + 90 * t)
+        draw.line([x0, y0 + i, x1, y0 + i], fill=(r, g, b))
+    # sun
+    cx, cy = (x0 + x1) // 2 + 40, y0 + 30
+    draw.ellipse([cx - 20, cy - 20, cx + 20, cy + 20], fill=(255, 244, 190))
+    # sea strip
+    draw.rectangle([x0, y1 - 12, x1, y1], fill=(30, 30, 90))
+    # palms: leaning trunk, fronds fanning down from the crown
+    for px, lean in [(x0 + 34, -1), (x1 - 38, 1)]:
+        top_x, top_y = px + lean * 8, y0 + 24
+        draw.line([px, y1 - 12, top_x, top_y], fill=(20, 10, 30), width=4)
+        for k, (dx, dy) in enumerate([(-22, 4), (-18, 13), (-9, 17),
+                                      (9, 17), (18, 13), (22, 4)]):
+            draw.line([top_x, top_y, top_x + dx, top_y + dy],
+                      fill=(20, 10, 30), width=3)
+    fnt = font(SANS_BOLD, 26)
+    txt = "VICE CITY"
+    tw = draw.textlength(txt, font=fnt)
+    tx = (x0 + x1 - tw) // 2
+    for dx, dy in [(-2, 0), (2, 0), (0, -2), (0, 2)]:
+        draw.text((tx + dx, y0 + 40 + dy), txt, font=fnt, fill=(255, 255, 255))
+    draw.text((tx, y0 + 40), txt, font=fnt, fill=(255, 60, 160))
 
-def draw_hero(d):
-    d.rectangle([28, 112, 996, 300], fill=PANEL_BG, outline=NAVY, width=3)
-    draw_hero_art(d, 36, 120, 330, 172)
-    d.text((382, 132), "1  ·  SHENZHEN  ·  APEC SUMMIT  ·  FIRST-EVER TRILATERAL",
-           font=font(SANS_B, 15), fill=RED, anchor="la")
-    f, lines = headline_lines(d, "TRUMP, XI AND PUTIN MEET IN SHENZHEN",
-                              596, max_lines=2, start=36, minimum=28)
-    ty = 156
-    for line in lines:
-        d.text((382, ty), line, font=f, fill=NAVY, anchor="la")
-        ty += int(f.size * 1.16)
-    body = ("The leaders of the US, China and Russia sit down together for "
-            "the first time — with Ukraine, Iran and nuclear arms on the "
-            "agenda.")
-    bf = font(SANS, 16)
-    for i, line in enumerate(wrap_text(d, body, bf, 596)):
-        d.text((382, ty + 4 + i * 19), line, font=bf, fill=(40, 40, 40),
-               anchor="la")
+
+def draw_courthouse(draw, x0, y0, x1, y1):
+    """The Peace Palace in The Hague: columns under a dark roof."""
+    draw.rectangle([x0, y0, x1, y1], fill=LIGHT_BLUE)
+    midx = (x0 + x1) // 2
+    # roof
+    draw.polygon([(x0 + 8, y0 + 42), (midx, y0 + 10), (x1 - 8, y0 + 42)],
+                 fill=NAVY)
+    draw.ellipse([midx - 9, y0 + 20, midx + 9, y0 + 38], fill=GOLD)
+    # entablature + columns
+    draw.rectangle([x0 + 14, y0 + 42, x1 - 14, y0 + 50], fill=(255, 255, 255))
+    for i in range(5):
+        cx = x0 + 34 + i * ((x1 - x0 - 68) // 4)
+        draw.rectangle([cx - 6, y0 + 50, cx + 6, y1 - 10], fill=(255, 255, 255))
+    draw.rectangle([x0 + 14, y1 - 10, x1 - 14, y1 - 4], fill=(255, 255, 255))
+    # steps
+    draw.rectangle([x0 + 30, y1 - 4, x1 - 30, y1], fill=(150, 170, 195))
 
 
-# ----------------------------------------------------------------- panels
+def draw_cyclone(draw, x0, y0, x1, y1):
+    """Cyclone Akvan: spiral over a dark Bay of Bengal, coast below."""
+    draw.rectangle([x0, y0, x1, y1], fill=(18, 38, 74))
+    cx, cy = (x0 + x1) // 2 + 30, (y0 + y1) // 2 - 2
+    # spiral arms
+    for ring in range(3):
+        r = 9 + ring * 10
+        draw.arc([cx - r, cy - r, cx + r, cy + r],
+                 start=40 + ring * 55, end=300 + ring * 55,
+                 fill=(255, 255, 255), width=4)
+    draw.ellipse([cx - 7, cy - 7, cx + 7, cy + 7], fill=RED)
+    # rain slashes
+    for i in range(14):
+        rx = x0 + 8 + (i * 23) % (x1 - x0 - 16)
+        ry = y0 + 6 + (i * 13) % (y1 - y0 - 26)
+        draw.line([rx, ry, rx - 4, ry + 10], fill=(140, 180, 220), width=2)
+    # coast strip
+    draw.rectangle([x0, y1 - 12, x1, y1], fill=(30, 110, 70))
+    draw.text((x0 + 8, y1 - 11), "", font=font(SANS, 10), fill=(255, 255, 255))
 
-PANELS = [
-    ("2  ·  VICE CITY", "GTA VI LAUNCHES WORLDWIDE",
-     "Rockstar's Vice City epic arrives after 13 years, to a 99 "
-     "Metacritic score.", draw_gta_art),
-    ("3  ·  THE HAGUE", "WORLD COURT RULES ON ROHINGYA CASE",
-     "The Hague delivers its verdict today in The Gambia's genocide case "
-     "against Myanmar.", draw_icj_art),
-    ("4  ·  BAY OF BENGAL", "CYCLONE AKVAN NEARS INDIA'S COAST",
-     "Red alerts and school closures in Odisha and Andhra Pradesh; "
-     "landfall due Friday.", draw_akvan_art),
+# ---------------------------------------------------------------- world map
+# Coarse land shapes as longitude/latitude boxes (union), tapered in
+# smaller pieces so the dotted map reads as continents, not rectangles.
+LAND_BOXES = [
+    # North America
+    (-168, -135, 58, 71), (-135, -95, 50, 70), (-95, -55, 45, 62),
+    (-125, -100, 30, 49), (-100, -67, 30, 45), (-117, -86, 15, 32),
+    (-92, -77, 8, 18), (-58, -20, 60, 84),
+    # South America
+    (-79, -35, -5, 11), (-75, -38, -35, -5), (-73, -53, -56, -35),
+    # Europe
+    (-10, 30, 36, 45), (-10, 25, 45, 60), (5, 30, 58, 71),
+    (-5, 2, 50, 59),
+    # Africa
+    (-17, 35, 15, 32), (-10, 42, -5, 15), (12, 35, -35, -5),
+    (43, 51, -26, -12),
+    # Asia
+    (40, 180, 55, 75), (40, 140, 35, 55), (75, 135, 20, 40),
+    (68, 89, 8, 32), (97, 110, 5, 28), (95, 141, -11, 6),
+    (129, 146, 31, 46), (35, 60, 12, 32),
+    # Oceania
+    (113, 154, -39, -11), (166, 179, -47, -34),
 ]
 
-
-def draw_panels(d):
-    pw, ph = 314, 184
-    for i, (place, headline, body, art) in enumerate(PANELS):
-        px = 28 + i * (pw + 13)
-        py = 308
-        d.rectangle([px, py, px + pw, py + ph], fill=PANEL_BG, outline=NAVY,
-                    width=3)
-        d.rectangle([px, py, px + pw, py + 28], fill=NAVY)
-        d.text((px + 12, py + 14), place, font=font(SANS_B, 17), fill=WHITE,
-               anchor="lm")
-        art(d, px + 8, py + 36, pw - 16, 62)
-        f, lines = headline_lines(d, headline, pw - 20, max_lines=2,
-                                  start=20, minimum=16, max_h=48)
-        ty = py + 104
-        for line in lines:
-            d.text((px + 10, ty), line, font=f, fill=NAVY, anchor="la")
-            ty += int(f.size * 1.18)
-        bf = font(SANS, 12)
-        for j, line in enumerate(wrap_text(d, body, bf, pw - 20)):
-            d.text((px + 10, ty + 2 + j * 14), line, font=bf,
-                   fill=(40, 40, 40), anchor="la")
+# Story number -> (longitude, latitude) for the map pins.
+PINS = {
+    1: (114.0, 22.5),    # Shenzhen
+    2: (-80.2, 25.8),    # Vice City (Miami)
+    3: (4.3, 52.1),      # The Hague
+    4: (89.0, 16.0),     # Bay of Bengal
+    5: (-25.0, 15.0),    # Voyager 1 (deep space, Atlantic marker)
+    6: (-75.7, 45.4),    # Ottawa
+    7: (2.35, 48.85),    # Paris
+    8: (139.7, 35.7),    # Tokyo
+    9: (-77.0, 38.9),    # Washington
+    10: (22.6, 32.8),    # Derna, Libya
+    11: (45.3, 2.0),     # Mogadishu
+    12: (30.7, 36.9),    # Antalya
+    13: (146.0, -38.0),  # Melbourne
+}
 
 
-# ----------------------------------------------------------------- briefs
+# Small pixel nudges so pins that sit close together on a 1024-wide map
+# (Ottawa/Washington, The Hague/Paris, Derna/Antalya) do not cover each
+# other. The numbers stay next to their true locations.
+PIN_OFFSETS = {2: (-16, 8), 3: (0, -13), 6: (-15, -9), 7: (-13, 11),
+               9: (13, 9), 10: (-11, 9), 12: (11, -9)}
 
-# (number, place, headline, body) — stories 5..13.
+
+def is_land(lon, lat):
+    for lo0, lo1, la0, la1 in LAND_BOXES:
+        if lo0 <= lon <= lo1 and la0 <= lat <= la1:
+            return True
+    return False
+
+
+def draw_map(draw, x0, y0, x1, y1):
+    draw.rectangle([x0, y0, x1, y1], fill=(232, 238, 245))
+    step = 6
+    for gy in range(y0 + 4, y1 - 3, step):
+        for gx in range(x0 + 4, x1 - 3, step):
+            lon = (gx - x0) / (x1 - x0) * 360.0 - 180.0
+            lat = 90.0 - (gy - y0) / (y1 - y0) * 180.0
+            if is_land(lon, lat):
+                draw.ellipse([gx - 2, gy - 2, gx + 2, gy + 2], fill=NAVY)
+    # pins on top, in number order so overlaps resolve predictably
+    fnt = font(SANS_BOLD, 11)
+    for num in sorted(PINS):
+        lon, lat = PINS[num]
+        px = x0 + (lon + 180.0) / 360.0 * (x1 - x0)
+        py = y0 + (90.0 - lat) / 180.0 * (y1 - y0)
+        dx, dy = PIN_OFFSETS.get(num, (0, 0))
+        px, py = px + dx, py + dy
+        r = 10
+        draw.ellipse([px - r, py - r, px + r, py + r], fill=RED,
+                     outline=(255, 255, 255), width=2)
+        label = str(num)
+        tw = draw.textlength(label, font=fnt)
+        th = fnt.size
+        draw.text((px - tw / 2, py - th / 2 - 1), label, font=fnt,
+                  fill=(255, 255, 255))
+
+
 BRIEFS = [
-    ("5", "VOYAGER 1", "NASA confirms Voyager 1 one light-day out",
-     "The 1977 probe, 16bn miles away, is the first human-made object "
-     "to reach the mark."),
-    ("6", "OTTAWA", "Carney resets Canada's China ties",
-     "Ottawa adjusts the relationship as it seeks the right deal with "
-     "Washington."),
-    ("7", "PARIS", "Mélenchon 'could win', minister says",
-     "France's justice minister says the hard-left leader could take "
-     "the top job."),
-    ("8", "TOKYO", "India and Japan review defence ties",
-     "Ministers meet in Tokyo to deepen security cooperation between "
-     "the two powers."),
-    ("9", "WASHINGTON", "US proposes tougher green-card rules",
-     "Employment-based green cards face longer hiring processes under "
-     "the new proposals."),
-    ("10", "EAST LIBYA", "Cocaine and millions of pills seized",
+    (5, "VOYAGER 1: NASA confirms Voyager 1 one light-day out",
+     "The 1977 probe, 16bn miles away, is the first human-made object to reach the mark."),
+    (6, "OTTAWA: Carney strikes a tariff deal with Xi",
+     "Ottawa resets its China ties as it seeks the right deal with Washington."),
+    (7, "PARIS: M\u00e9lenchon \u2018could win\u2019, minister says",
+     "France\u2019s justice minister says the hard-left leader could take the top job."),
+    (8, "TOKYO: India and Japan review defence ties",
+     "Ministers meet in Tokyo to deepen security cooperation between the two powers."),
+    (9, "WASHINGTON: US proposes tougher green-card rules",
+     "Employment-based green cards face longer hiring processes under the new proposals."),
+    (10, "EAST LIBYA: Cocaine and millions of pills seized",
      "A major drugs haul is seized in eastern Libya, officials say."),
-    ("11", "MOGADISHU", "Somalia accuses UAE of secret bases",
-     "Mogadishu says the UAE built military bases on its soil without "
-     "federal approval."),
-    ("12", "ANTALYA", "COP31 climate talks continue",
-     "Negotiators press on in Turkey as the summit runs into its final "
-     "stretch."),
-    ("13", "AUSTRALIA", "Duckett's 133 puts England on top",
-     "Ben Duckett hits 133 in the third ODI against Australia."),
+    (11, "MOGADISHU: Somalia accuses UAE of secret bases",
+     "Mogadishu says the UAE built military bases on its soil without federal approval."),
+    (12, "ANTALYA: COP31 climate talks continue",
+     "Negotiators press on in Turkey as a draft deal draws fire; the summit closes Friday."),
+    (13, "AUSTRALIA: Duckett\u2019s 133 puts England on top",
+     "Ben Duckett hits 133 in the third ODI as England seal the series 2\u20131."),
 ]
 
 
-def draw_brief(d, x, y, num, place, headline, body, col_w):
+def draw_brief(draw, x0, y0, w, num, headline, body):
     r = 13
-    d.ellipse([x, y, x + 2 * r, y + 2 * r], fill=RED)
-    d.text((x + r, y + r), num, font=font(SANS_B, 13 if len(num) < 2 else 11),
-           fill=WHITE, anchor="mm")
-    tx = x + 2 * r + 8
-    tw = col_w - 2 * r - 8
-    f, lines = headline_lines(d, place + ": " + headline, tw, max_lines=2,
-                              start=15, minimum=12)
-    ty = y
-    for line in lines:
-        d.text((tx, ty), line, font=f, fill=NAVY, anchor="la")
-        ty += int(f.size * 1.18)
-    bf = font(SANS, 12)
-    for j, line in enumerate(wrap_text(d, body, bf, tw)[:2]):
-        d.text((tx, ty + 2 + j * 15), line, font=bf, fill=(40, 40, 40),
-               anchor="la")
+    cx, cy = x0 + r, y0 + r
+    draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=RED)
+    f_num = font(SANS_BOLD, 12)
+    label = str(num)
+    tw = draw.textlength(label, font=f_num)
+    draw.text((cx - tw / 2, cy - 8), label, font=f_num, fill=(255, 255, 255))
+    tx = x0 + 2 * r + 8
+    f_head = font(SANS_BOLD, 15)
+    y = text_block(draw, tx, y0 - 1, headline, f_head, INK, w - 2 * r - 8,
+                   leading=18)
+    f_body = font(SANS, 12)
+    text_block(draw, tx, y + 2, body, f_body, GREY, w - 2 * r - 8, leading=15)
 
 
-def draw_briefs(d):
-    d.rectangle([28, 692, 996, 988], fill=PANEL_BG, outline=NAVY, width=3)
-    d.rectangle([28, 692, 996, 720], fill=NAVY)
-    d.text((44, 706), "AROUND THE WORLD IN BRIEF", font=font(SANS_B, 19),
-           fill=WHITE, anchor="lm")
-    d.text((980, 706), "9 more stories from the day", font=font(SANS, 14),
-           fill=CREAM, anchor="rm")
-    col_w = 306
-    for i, (num, place, headline, body) in enumerate(BRIEFS):
-        cx = 44 + (i % 3) * (col_w + 16)
-        cy = 734 + (i // 3) * 82
-        draw_brief(d, cx, cy, num, place, headline, body, col_w)
-
-
-# -------------------------------------------------------------------- main
-
-def main():
-    for row in LANDMASK:
-        assert len(row) == 104, f"landmask row has {len(row)} cells"
-    assert len(LANDMASK) == 24
-    img = Image.new("RGB", (W, H), PAPER)
+def render():
+    img = Image.new("RGB", (W, H), CREAM)
     d = ImageDraw.Draw(img)
-    draw_masthead(d)
-    draw_hero(d)
-    draw_panels(d)
-    draw_map(d)
-    draw_briefs(d)
-    d.text((512, 1008),
-           "All 13 stories verified from reporting first published on 19 November 2026  ·  "
-           "Drawn entirely by code — no photographs",
-           font=font(SANS, 12), fill=(90, 90, 90), anchor="mm")
-    out = Path(__file__).resolve().parent.parent / "entry.png"
-    img.save(out, "PNG", optimize=True)
-    print(f"wrote {out} ({out.stat().st_size} bytes)")
+    d.rectangle([8, 8, W - 9, H - 9], outline=NAVY, width=3)
+
+    # ---- masthead: y 16..106
+    d.rectangle([14, 14, 1010, 104], fill=NAVY)
+    f_title = font(SERIF, 56)
+    title = "THE WORLD IN ONE DAY"
+    tw = d.textlength(title, font=f_title)
+    d.text(((W - tw) / 2, 20), title, font=f_title, fill=(255, 255, 255))
+    f_sub = font(SANS_BOLD, 15)
+    d.text((26, 80), "ONE DAY  \u00b7  13 STORIES  \u00b7  EVERY REGION",
+           font=f_sub, fill=(255, 255, 255))
+    f_date = font(SANS_BOLD, 16)
+    date = "THURSDAY, 19 NOVEMBER 2026"
+    dw = d.textlength(date, font=f_date)
+    d.text((1010 - 12 - dw, 79), date, font=f_date, fill=(255, 90, 90))
+    d.rectangle([14, 106, 1010, 110], fill=RED)
+
+    # ---- hero: y 118..314
+    panel(d, 20, 118, 1004, 314)
+    draw_skyline(d, 26, 124, 356, 308)
+    tx = 372
+    f_kick = font(SANS_BOLD, 15)
+    d.text((tx, 130), "1  \u00b7  SHENZHEN  \u00b7  APEC SUMMIT  \u00b7  FIRST-EVER TRILATERAL",
+           font=f_kick, fill=RED)
+    f_head = font(SERIF, 38)
+    y = text_block(d, tx, 156, "TRUMP, XI AND PUTIN MEET IN SHENZHEN",
+                   f_head, INK, 1004 - tx - 16, leading=44)
+    f_deck = font(SANS, 17)
+    text_block(d, tx, y + 8,
+               "The leaders of the US, China and Russia sit down together for "
+               "the first time \u2014 with Ukraine, Iran and nuclear arms on the agenda.",
+               f_deck, GREY, 1004 - tx - 16, leading=22)
+
+    # ---- three picture panels: y 324..502
+    panels = [
+        (20, "2  \u00b7  VICE CITY", draw_vice_city,
+         "GTA VI LAUNCHES WORLDWIDE",
+         "Rockstar\u2019s Vice City epic arrives after 13 years."),
+        (352, "3  \u00b7  THE HAGUE", draw_courthouse,
+         "WORLD COURT RULES ON ROHINGYA CASE",
+         "The Hague delivers its verdict in The Gambia\u2019s case against Myanmar."),
+        (684, "4  \u00b7  BAY OF BENGAL", draw_cyclone,
+         "CYCLONE AKVAN NEARS INDIA\u2019S COAST",
+         "Red alerts in Odisha and Andhra Pradesh; landfall due Friday."),
+    ]
+    for x0, strip, art, headline, deck in panels:
+        x1 = x0 + 320
+        panel(d, x0, 324, x1, 508)
+        header_strip(d, x0 + 2, 326, x1 - 2, 352, strip)
+        art(d, x0 + 8, 358, x1 - 8, 428)
+        f_ph = font(SANS_BOLD, 18)
+        y = text_block(d, x0 + 10, 434, headline, f_ph, INK, 300, leading=20)
+        f_pd = font(SANS, 12)
+        text_block(d, x0 + 10, y + 3, deck, f_pd, GREY, 300, leading=14)
+
+    # ---- map: y 518..684
+    panel(d, 20, 518, 1004, 684)
+    header_strip(d, 22, 520, 1002, 548, "THE DAY ON THE MAP",
+                 "numbered pins: all 13 stories")
+    draw_map(d, 26, 554, 998, 678)
+
+    # ---- briefs: y 694..986
+    panel(d, 20, 694, 1004, 986)
+    header_strip(d, 22, 696, 1002, 724, "AROUND THE WORLD IN BRIEF",
+                 "9 more stories from the day")
+    col_w = 320
+    row_h = 86
+    for i, (num, headline, body) in enumerate(BRIEFS):
+        col, row = i % 3, i // 3
+        bx = 30 + col * (col_w + 4)
+        by = 736 + row * row_h
+        draw_brief(d, bx, by, col_w, num, headline, body)
+
+    # ---- footer
+    f_foot = font(SANS, 11)
+    foot = ("All 13 stories from reporting first published on 19 November 2026"
+            "  \u00b7  Drawn entirely by code \u2014 no photographs")
+    fw = d.textlength(foot, font=f_foot)
+    d.text(((W - fw) / 2, 994), foot, font=f_foot, fill=GREY)
+    return img
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    out = sys.argv[1] if len(sys.argv) > 1 else "entry.png"
+    render().save(out, "PNG")
+    print("wrote", out)
